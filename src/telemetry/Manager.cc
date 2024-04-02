@@ -193,8 +193,56 @@ RecordValPtr Manager::GetMetricOptsRecord(const prometheus::MetricFamily& metric
     return record_val;
 }
 
+static bool compare_string_vectors(const VectorValPtr& a, const VectorValPtr& b) {
+    if ( a->Size() < b->Size() )
+        return true;
+    if ( a->Size() > b->Size() )
+        return false;
+
+    auto a_v = a->RawVec();
+    auto b_v = b->RawVec();
+
+    auto b_it = b_v.begin();
+    for ( auto a_it = a_v.begin(); a_it != a_v.end(); ++a_it, ++b_it ) {
+        if ( ! a_it->has_value() )
+            return false;
+        if ( ! b_it->has_value() )
+            return true;
+
+        if ( (*a_it)->AsString()->ToStdStringView() < (*b_it)->AsString()->ToStdStringView() )
+            return true;
+    }
+
+    return false;
+}
+
+static bool sorter(const std::optional<ZVal>& a, const std::optional<ZVal>& b, const RecordTypePtr& type) {
+    if ( ! a )
+        return false;
+
+    if ( ! b )
+        return true;
+
+    auto a_r = a->ToVal(type)->AsRecordVal();
+    auto b_r = b->ToVal(type)->AsRecordVal();
+
+    auto a_labels = a_r->GetField<VectorVal>("labels");
+    auto b_labels = b_r->GetField<VectorVal>("labels");
+    return compare_string_vectors(a_labels, b_labels);
+}
+
+static bool sort_metrics(const std::optional<ZVal>& a, const std::optional<ZVal>& b) {
+    static auto metric_record_type = zeek::id::find_type<zeek::RecordType>("Telemetry::Metric");
+    return sorter(a, b, metric_record_type);
+}
+
+static bool sort_histograms(const std::optional<ZVal>& a, const std::optional<ZVal>& b) {
+    static auto metric_record_type = zeek::id::find_type<zeek::RecordType>("Telemetry::HistogramMetric");
+    return sorter(a, b, metric_record_type);
+}
+
 ValPtr Manager::CollectMetrics(std::string_view prefix_pattern, std::string_view name_pattern) {
-    static auto metrics_vector_type = zeek::id::find_type<VectorType>("any_vec");
+    static auto metrics_vector_type = zeek::id::find_type<VectorType>("Telemetry::MetricVector");
     static auto string_vec_type = zeek::id::find_type<zeek::VectorType>("string_vec");
     static auto metric_record_type = zeek::id::find_type<zeek::RecordType>("Telemetry::Metric");
     static auto opts_idx = metric_record_type->FieldOffset("opts");
@@ -255,11 +303,21 @@ ValPtr Manager::CollectMetrics(std::string_view prefix_pattern, std::string_view
         }
     }
 
+    // If running under btest, there are issues with the non-deterministic
+    // ordering of the metrics coming out of prometheus-cpp, which uses
+    // std::hash on the label values to sort them. Check for that case and sort
+    // the results to some fixed order so that the tests have consistent
+    // results.
+    if ( ret_val->Size() > 0 && getenv("TEST_NAME") != nullptr ) {
+        auto& vec = ret_val->RawVec();
+        std::sort(vec.begin(), vec.end(), sort_metrics);
+    }
+
     return ret_val;
 }
 
 ValPtr Manager::CollectHistogramMetrics(std::string_view prefix_pattern, std::string_view name_pattern) {
-    static auto metrics_vector_type = zeek::id::find_type<VectorType>("any_vec");
+    static auto metrics_vector_type = zeek::id::find_type<VectorType>("Telemetry::HistogramMetricVector");
     static auto string_vec_type = zeek::id::find_type<zeek::VectorType>("string_vec");
     static auto double_vec_type = zeek::id::find_type<zeek::VectorType>("double_vec");
     static auto count_vec_type = zeek::id::find_type<zeek::VectorType>("index_vec");
@@ -359,6 +417,16 @@ ValPtr Manager::CollectHistogramMetrics(std::string_view prefix_pattern, std::st
 
             ret_val->Append(r);
         }
+    }
+
+    // If running under btest, there are issues with the non-deterministic
+    // ordering of the metrics coming out of prometheus-cpp, which uses
+    // std::hash on the label values to sort them. Check for that case and sort
+    // the results to some fixed order so that the tests have consistent
+    // results.
+    if ( ret_val->Size() > 0 && getenv("TEST_NAME") != nullptr ) {
+        auto& vec = ret_val->RawVec();
+        std::sort(vec.begin(), vec.end(), sort_histograms);
     }
 
     return ret_val;
