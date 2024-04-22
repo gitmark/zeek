@@ -19,12 +19,12 @@ void Manager::InitPostScript() { detail::backend_opaque = make_intrusive<OpaqueT
 BackendPtr Manager::OpenBackend(const Tag& type, RecordValPtr config, TypePtr vt) {
     Component* c = Lookup(type);
     if ( ! c ) {
-        reporter->InternalWarning("Request to open unknown backend");
+        reporter->Warning("Request to open unknown backend (%d:%d)", type.Type(), type.Subtype());
         return nullptr;
     }
 
     if ( ! c->Factory() ) {
-        reporter->InternalWarning("Backend %s cannot be instantiated dynamically ", GetComponentName(type).c_str());
+        reporter->Warning("Failed to open backend %s\n", GetComponentName(type).c_str());
         return nullptr;
     }
 
