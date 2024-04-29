@@ -71,7 +71,7 @@ set(ZEEK_ETC_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/etc"
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE INTERNAL
                                            "Whether to write a JSON compile commands database")
 
-set(ZEEK_CXX_STD cxx_std_17 CACHE STRING "The C++ standard to use.")
+set(ZEEK_CXX_STD cxx_std_20 CACHE STRING "The C++ standard to use.")
 
 set(ZEEK_SANITIZERS "" CACHE STRING "Sanitizers to use when building.")
 
